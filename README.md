@@ -30,8 +30,10 @@ Just run the file. It has an example in it.
 Show me stuff!
 --------------
 
+From this:
 ![Original Image](wall.png "From this")
 
+To this:
 ![Composition of the resulting images](result.png "To this.")
 
 In the pic above I composed the generated images to show the 'illusion of depth' achieved.
