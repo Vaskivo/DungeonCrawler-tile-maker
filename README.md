@@ -5,7 +5,7 @@ Generates wall tiles to be used in a 'old school dungeon crawler' like Bard's Ta
 
 
 How to use
-==========
+----------
 
 You must have an image with a 'front wall'. Feed it to the function and it will generate the tiles.
 
@@ -28,30 +28,31 @@ Just run the file. It has an example in it.
 
 
 Show me stuff!
-==============
+--------------
 
 ![Original Image](wall.png "From this")
 
-![Composition of the resulting images](wall.png "To this.")
+![Composition of the resulting images](result.png "To this.")
 
 In the pic above I composed the generated images to show the 'illusion of depth' achieved.
 
 
 Dependencies
-============
+------------
+
 - I started this in Python 2.7 but finished it in 3.3 (don't ask). Still, I believe it runs in both.
 - Pillow
 - Numpy
 
 
 Credits
-=======
+-------
 
 The source image in the repo can be found [here](http://opengameart.org/node/10606) (thanks xmorg), although I butchered it a bit to suit my tests.
 
 
 TODO
-====
+----
 
 - Better documentation
 - Add padding to make the size of the images a power of two
