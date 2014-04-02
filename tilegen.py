@@ -9,15 +9,34 @@
 """
 
 from __future__ import division
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 from itertools import count
 from PIL import Image
 import os
-import json
 import numpy
+import json
+
+
+def get_recursive_def_dict():
+    f = lambda: defaultdict(f)
+    return defaultdict(f)
+
+
 
 Point = namedtuple('Point', 'x y')
 Trapeze = namedtuple('Trapeze', 'tl tr br bl')
+
+def change_point_referential(point, new_origin):
+    return Point(point.x - new_origin.x,
+                 point.y - new_origin.y
+                )
+
+def invert_point_referential(point, x=False, y=False):
+    change_x = -1 if x else 1
+    change_y = -1 if y else 1
+    return Point(point.x * change_x,
+                 point.y * change_y)
+
 
 def trapeze_size(trapeze):
     return (max(trapeze.tr.x, trapeze.br.x) - min(trapeze.tl.x, trapeze.bl.x),
@@ -29,17 +48,28 @@ def trapeze_to_dict(trapeze):
                   ('top_right', tuple(trapeze.tr)),
                   ('bottom_right', tuple(trapeze.br)),
                   ('bottom_left', tuple(trapeze.bl)),
-                  ('size', trapeze_size(trapeze)),
                ))
 
 def trapeze_to_box(trapeze):
     return ( min(trapeze.tl.x, trapeze.bl.x),
-             min(trapeze.tr.y, trapeze.tr.y),
+             min(trapeze.tl.y, trapeze.tr.y),
              max(trapeze.tr.x, trapeze.br.x),
              max(trapeze.bl.y, trapeze.br.y) 
            )
 
+def change_trapeze_referential(trapeze, new_origin):
+    return Trapeze(change_point_referential(trapeze.tl, new_origin),
+                   change_point_referential(trapeze.tr, new_origin),
+                   change_point_referential(trapeze.br, new_origin),
+                   change_point_referential(trapeze.bl, new_origin)
+                  )
 
+def invert_trapeze_referential(trapeze, x=False, y=False):
+    return Trapeze(invert_point_referential(trapeze.tl, x, y),
+                   invert_point_referential(trapeze.tr, x, y),
+                   invert_point_referential(trapeze.br, x, y),
+                   invert_point_referential(trapeze.bl, x, y)
+                  )
     
     
 def _find_coeffs(pa, pb):
@@ -70,7 +100,7 @@ def _get_line_equation(point_1, point_2):
     b = point_1.y - m*point_1.x
     def func(x=None, y=None):
         if x is None and y is None:
-            raise ValueError('One of the argumentes must not be null')
+            raise ValueError('One of the argumentes cannot not be null')
         if x is not None:
             return m*x + b
         else:
@@ -161,7 +191,8 @@ def _generate_corridor_coordinates(vanishing_point, from_top_point, from_bottom_
     
  
 def generate_tiles(source_wall_filename, result_filename, depth, 
-                   vanishing_point_offset=(0,0), new_size=None, source_offset=(0,0), crop=False):
+                   vanishing_point_offset=(0,0), new_size=None, 
+                   source_offset=(0,0), crop=False, origin_at_center=False):
     """
         Main function, that creates all the tiles.
 
@@ -181,6 +212,10 @@ def generate_tiles(source_wall_filename, result_filename, depth,
                                         centered in the new ones. The offset
                                         displaces it is needed.
             - crop:                     So the resulting images are cropped.
+            - origin_at_center:         The output coordinates in the JSON file
+                                        will consider the center of the image as
+                                        the origin (0, 0) and an orthogonal 
+                                        referential (y goes up, x to the left)
 
         Result:
             - This function has no return.
@@ -229,24 +264,24 @@ def generate_tiles(source_wall_filename, result_filename, depth,
     result_trapezes = {}
 
     # near tile
-    result_trapezes['n'] = source_box
+    result_trapezes['0'] = source_box
     # near left tile
     left_t = _generate_corridor_coordinates(vanishing_point, 
                                             source_box.tl,
                                             source_box.bl,
                                             (result_image.size[0] - source_image.size[0])/2 - part)
-    result_trapezes['n_l'] = left_t
+    result_trapezes['0_-1'] = left_t
     # near right tile
     right_t = _generate_corridor_coordinates(vanishing_point, 
                                              source_box.tr,
                                              source_box.br,
                                              (result_image.size[0] + source_image.size[0])/2 + part)
-    result_trapezes['n_r'] = right_t
+    result_trapezes['0_1'] = right_t
                 
     for j in range(depth-1, 0, -1): 
         # creating the 'front walls'
         front_t = _generate_wall_coordinates(vanishing_point, (j)*part, *source_box)
-        result_trapezes['f'*(depth-j)] = front_t
+        result_trapezes[str((depth-j))] = front_t
         
         # creating the 'side walls' (corridor)
         t_size = trapeze_size(front_t)
@@ -262,7 +297,7 @@ def generate_tiles(source_wall_filename, result_filename, depth,
                                                         tl, 
                                                         bl, 
                                                         (result_image.size[0] - t_size[0])/2 - t_size[0]*i - part*(i+1))
-                result_trapezes['f'*(depth-j) + '_' + 'l'*(i+1)] = left_t
+                result_trapezes[str((depth-j)) + '_' + str(-(i+1))] = left_t
                 
                 no_left = False
             if (result_image.size[0] + t_size[0])/2 + t_size[0]*i < result_image.size[0]:
@@ -273,7 +308,7 @@ def generate_tiles(source_wall_filename, result_filename, depth,
                                                          tr,
                                                          br, 
                                                          (result_image.size[0] + t_size[0])/2 + t_size[0]*i + part*(i+1))
-                result_trapezes['f'*(depth-j) + '_' + 'r'*(i+1)] = right_t
+                result_trapezes[str((depth-j)) + '_' + str((i+1))] = right_t
                 no_right = False
             if no_left and no_right:
                 break
@@ -284,9 +319,10 @@ def generate_tiles(source_wall_filename, result_filename, depth,
         os.makedirs(save_dir)
 
     result_images = {}
-    result_json = { 'image_size' : result_image.size,
-                         'tiles' : {}
-                       }
+    result_json = get_recursive_def_dict()
+    result_json['image_size'] = result_image.size
+    result_json['extension'] = '.png'
+                
     
     for k in result_trapezes.keys(): 
         coeffs = _find_coeffs(list(result_trapezes[k]), list(source_box))
@@ -299,9 +335,35 @@ def generate_tiles(source_wall_filename, result_filename, depth,
             box = tuple(round(x) for x in box)
             new_image = new_image.crop(box)
 
-        tile_filename = '{0}_{1}.png'.format(result_filename, k) 
-        new_image.save(os.path.join(save_dir, tile_filename), 'PNG')
-        result_json['tiles'][tile_filename] = trapeze_to_dict(result_trapezes[k])
+        tile_filename = '{0}_{1}'.format(result_filename, k) 
+        new_image.save(os.path.join(save_dir, '{0}.png'.format(tile_filename)), 'PNG')
+
+        if origin_at_center:
+            t = change_trapeze_referential(result_trapezes[k],
+                                           Point(result_image.size[0]/2, result_image.size[1]/2))
+            t = invert_trapeze_referential(t, y = True)
+            corners = trapeze_to_dict(t)
+        else:
+            corners = trapeze_to_dict(result_trapezes[k])
+
+        result_json['tiles'][tile_filename]['corners'] = corners
+        result_json['tiles'][tile_filename]['size'] = trapeze_size(result_trapezes[k])
+
+        sides = get_recursive_def_dict()
+        sides['left'] = min(corners['top_left'][0], corners['bottom_left'][0])
+        sides['right'] = max(corners['top_right'][0], corners['bottom_right'][0])
+        if origin_at_center:
+            sides['up'] = max(corners['top_left'][1], corners['top_right'][1])
+            sides['down'] = min(corners['bottom_left'][1], corners['bottom_right'][1])
+        else:
+            sides['up'] = min(corners['top_left'][1], corners['top_right'][1])
+            sides['down'] = max(corners['bottom_left'][1], corners['bottom_right'][1])
+
+        result_json['tiles'][tile_filename]['sides'] = sides
+
+        result_json['tiles'][tile_filename]['center']['x'] = (sides['left']+sides['right']) / 2
+        result_json['tiles'][tile_filename]['center']['y'] = (sides['up']+sides['down']) / 2
+
 
     json_file = os.path.join(save_dir, result_filename + '.json')
     with open(json_file, 'w') as result_json_file:
@@ -311,8 +373,9 @@ def generate_tiles(source_wall_filename, result_filename, depth,
 
 if __name__ == '__main__':
     #generate_tiles('wall.png' 'cenas', 5, new_size=(256, 192))
-    generate_tiles('wall.png', 'cenas', 4, vanishing_point_offset=(0, -30), new_size=(288, 216))
+    #generate_tiles('wall.png', 'cenas', 5, vanishing_point_offset=(0, -30), new_size=(288, 216), origin_at_center=True, crop=True)
     #generate_tiles('wall.png', 'cenas', 4, new_size=(288, 216), crop=True)
     #generate_tiles('wall.png', 'cenas', 4, new_size=(320, 240))
     #generate_tiles('wall.png', 'cenas', 5, new_size=(512, 288))
+    generate_tiles('new_wall.png', 'cenas',3, vanishing_point_offset=(0, -75), new_size=(800, 600), origin_at_center=True, crop=True)
     
