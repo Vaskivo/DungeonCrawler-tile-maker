@@ -264,24 +264,24 @@ def generate_tiles(source_wall_filename, result_filename, depth,
     result_trapezes = {}
 
     # near tile
-    result_trapezes['0'] = source_box
+    result_trapezes['0_0_f'] = source_box
     # near left tile
     left_t = _generate_corridor_coordinates(vanishing_point, 
                                             source_box.tl,
                                             source_box.bl,
                                             (result_image.size[0] - source_image.size[0])/2 - part)
-    result_trapezes['0_-1'] = left_t
+    result_trapezes['0_0_l'] = left_t
     # near right tile
     right_t = _generate_corridor_coordinates(vanishing_point, 
                                              source_box.tr,
                                              source_box.br,
                                              (result_image.size[0] + source_image.size[0])/2 + part)
-    result_trapezes['0_1'] = right_t
+    result_trapezes['0_0_r'] = right_t
                 
     for j in range(depth-1, 0, -1): 
         # creating the 'front walls'
         front_t = _generate_wall_coordinates(vanishing_point, (j)*part, *source_box)
-        result_trapezes[str((depth-j))] = front_t
+        result_trapezes[str(depth-j) + '_0_f'] = front_t
         
         # creating the 'side walls' (corridor)
         t_size = trapeze_size(front_t)
@@ -297,7 +297,7 @@ def generate_tiles(source_wall_filename, result_filename, depth,
                                                         tl, 
                                                         bl, 
                                                         (result_image.size[0] - t_size[0])/2 - t_size[0]*i - part*(i+1))
-                result_trapezes[str((depth-j)) + '_' + str(-(i+1))] = left_t
+                result_trapezes[str((depth-j)) + '_' + str(-i) + '_l'] = left_t
                 
                 no_left = False
             if (result_image.size[0] + t_size[0])/2 + t_size[0]*i < result_image.size[0]:
@@ -308,7 +308,7 @@ def generate_tiles(source_wall_filename, result_filename, depth,
                                                          tr,
                                                          br, 
                                                          (result_image.size[0] + t_size[0])/2 + t_size[0]*i + part*(i+1))
-                result_trapezes[str((depth-j)) + '_' + str((i+1))] = right_t
+                result_trapezes[str((depth-j)) + '_' + str(i) + '_r'] = right_t
                 no_right = False
             if no_left and no_right:
                 break
@@ -377,5 +377,5 @@ if __name__ == '__main__':
     #generate_tiles('wall.png', 'cenas', 4, new_size=(288, 216), crop=True)
     #generate_tiles('wall.png', 'cenas', 4, new_size=(320, 240))
     #generate_tiles('wall.png', 'cenas', 5, new_size=(512, 288))
-    generate_tiles('new_wall.png', 'cenas',3, vanishing_point_offset=(0, -75), new_size=(800, 600), origin_at_center=True, crop=True)
+    generate_tiles('new_wall.png', 'cenas',4, vanishing_point_offset=(0, -75), new_size=(800, 600), origin_at_center=True, crop=False)
     
