@@ -194,7 +194,7 @@ def generate_tiles(source_wall_filename, result_name, wall_dims, sides,
         
 if __name__ == '__main__':
     
-    generate_tiles('wall.png', 'coisas', (50, 40), 3, 3, 50, 
+    generate_tiles('wall.png', 'coisas', (50, 40), 3, 4, 50, 
                     (300, 200), horizontal_fov=90, vertical_fov=60)
     
         
