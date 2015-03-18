@@ -10,18 +10,22 @@ How to use
 You must have an image with a 'front wall'. Feed it to the function and it will generate the tiles.
 
 ```python
-generate_tiles(source_wall_filename,			# Filename of the original image
-			   result_filename, 			 	# Filename of the resulting images
-			   depth, 							# How much farther from the front wall you want tiles
-               vanishing_point_offset=(0,0), 	# By default, the vanishing point is at the center of
-               									# of the image. This is if you want to move it.
-               new_size=None, 					# If you want the resulting images to have a different
-               									# size.
-               source_offset=(0,0), 			# By default, the original image is considered to be 
-               									# centered. Use this if you want to move it.
-               crop=False						# If you want the resulting images to be cropped.
-              )
-
+generate_tiles(source_wall_filename, 			# Filename of the original image
+			   result_name, 					# Folder where the tiles will be generated to
+			   wall_dims, 						# dimensions of the wall - tuple(width, height)
+			   sides, 							# how many cells will be considered and calculated to 
+												# the left and to the right. (it will correspond to how
+												# many cells are available to be rendered)
+			   depth, 							# how many cells will be considered and calculated 
+												# 'forward'. (it will correspond to how
+												# many cells are available to be rendered)
+			   depth_offset, 					# The camera is centerend inside the cell at (0,0,0). 
+												# This value displaces all the cells 'forward'
+			   screen_dims, 					# dimensions of the screen - tuple(width, height)
+			   horizontal_fov=90, 				# horizontal field of view angle, in degrees
+			   vertical_fov=60					# vertical field of view angle, in degrees
+			   )
+			  
 ```
 
 Just run the file. It has an example in it.
@@ -57,5 +61,7 @@ TODO
 ----
 
 - Better documentation
+- JSON file with (meta)data.
+- Cropping images.
 - Add padding to make the size of the images a power of two
 
