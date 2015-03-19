@@ -61,7 +61,6 @@ TODO
 ----
 
 - Better documentation
-- JSON file with (meta)data.
 - Cropping images.
 - Add padding to make the size of the images a power of two
 

@@ -1,10 +1,11 @@
 
 
 from __future__ import division
-from collections import namedtuple
+from collections import namedtuple, defaultdict
 from PIL import Image, ImageDraw
 import numpy
 import math
+import json
 import os
 
 Point3D = namedtuple('Point3D', 'x y z')
@@ -12,6 +13,24 @@ Point2D = namedtuple('Point2D', 'x y')
 
 Trapeze = namedtuple('Trapeze', 'tl tr br bl')
 
+def _recursive_default_dict():
+    f = lambda: defaultdict(f)
+    return defaultdict(f)
+    
+
+def _find_coeffs(pa, pb):
+    ''' Finds coefficients to be used by Image.transform '''
+    matrix = []
+    for p1, p2 in zip(pa, pb):
+        matrix.append([p1[0], p1[1], 1, 0, 0, 0, -p2[0]*p1[0], -p2[0]*p1[1]])
+        matrix.append([0, 0, 0, p1[0], p1[1], 1, -p2[1]*p1[0], -p2[1]*p1[1]])
+
+    A = numpy.matrix(matrix, dtype=numpy.float)
+    B = numpy.array(pb).reshape(8)
+
+    res = numpy.dot(numpy.linalg.inv(A.T * A) * A.T, B)
+    return numpy.array(res).reshape(8)
+    
 
 eqs = {
     'f' : { 'tl': lambda row, column, u, v, z_offset: Point3D( (-u/2) + column * u,
@@ -115,19 +134,21 @@ def world_walls_in_screen(world_walls, screen_dims, horizontal_fov, vertical_fov
     return screen_walls
        
      
-def _find_coeffs(pa, pb):
-    ''' Finds coefficients to be used by Image.transform '''
-    matrix = []
-    for p1, p2 in zip(pa, pb):
-        matrix.append([p1[0], p1[1], 1, 0, 0, 0, -p2[0]*p1[0], -p2[0]*p1[1]])
-        matrix.append([0, 0, 0, p1[0], p1[1], 1, -p2[1]*p1[0], -p2[1]*p1[1]])
-
-    A = numpy.matrix(matrix, dtype=numpy.float)
-    B = numpy.array(pb).reshape(8)
-
-    res = numpy.dot(numpy.linalg.inv(A.T * A) * A.T, B)
-    return numpy.array(res).reshape(8)
-
+def screen_culled_walls(screen_walls, screen_dims):
+    w, h = screen_dims
+    left, right = -w/2, w/2
+    top, bottom = h/2, -h/2
+    
+    new_walls = {}
+    for name, wall in screen_walls.items():
+        if min(wall.tl.x, wall.bl.x) > right or \
+           max(wall.tr.x, wall.br.x) < left or \
+           max(wall.tl.y, wall.tr.y) < bottom or \
+           min(wall.bl.y, wall.br.y) > top:
+            continue
+        new_walls[name] = wall
+    return new_walls
+    
      
 def generate_wall_images(wall_filename, result_folder, screen_walls, screen_dims):
 
@@ -161,6 +182,39 @@ def generate_wall_images(wall_filename, result_folder, screen_walls, screen_dims
 
         new_image.save(os.path.join(result_folder, name) + '.png', 'PNG')
        
+
+def generate_json_file(result_name, screen_dims, screen_walls):
+    data = _recursive_default_dict()
+    data['image_size'] = [screen_dims[0], screen_dims[1]]
+    
+    tiles = data['tiles']
+    for name, wall in screen_walls.items():
+        tile = tiles[name]
+        
+        corners = tile['corners']
+        corners['top_left'] = list(wall.tl)
+        corners['top_right'] = list(wall.tr)
+        corners['bottom_right'] = list(wall.br)
+        corners['bottom_left'] = list(wall.bl)
+        
+        sides = tile['sides']
+        sides['left'] = min([point.x for point in wall])
+        sides['right'] = max([point.x for point in wall])
+        sides['top'] = max([point.y for point in wall])
+        sides['bottom'] = min([point.y for point in wall])
+        
+        tile['center'] = [ (sides['left'] + sides['right']) / 2,
+                           (sides['top'] + sides['bottom']) / 2]
+                           
+        tile['size'] = [ (sides['right'] - sides['left']),
+                         (sides['top'] - sides['bottom'])]
+    
+    filename = os.path.join(result_name, 'data.json')
+    with open(filename, 'w') as output:
+        json.dump(data, output, sort_keys=True, indent=4)
+        
+       
+       
        
 def generate_tiles(source_wall_filename, result_name, wall_dims, sides, 
                     depth, depth_offset, screen_dims, horizontal_fov=90, vertical_fov=60):
@@ -188,7 +242,9 @@ def generate_tiles(source_wall_filename, result_name, wall_dims, sides,
                     
     w = world_walls(wall_dims, sides, depth, depth_offset)
     w = world_walls_in_screen(w, screen_dims, horizontal_fov, vertical_fov)
+    w = screen_culled_walls(w, screen_dims)
     generate_wall_images(source_wall_filename, result_name, w, screen_dims)
+    generate_json_file(result_name, screen_dims, w)
       
        
         
