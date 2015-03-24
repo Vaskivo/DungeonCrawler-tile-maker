@@ -171,7 +171,7 @@ def generate_wall_images(wall_filename, result_folder, screen_walls, screen_dims
     for name, wall in screen_walls.items():
         wall_img_coords = []
         for point in wall:
-            wall_img_coords.append(Point2D(point.x + half_screen_w, half_image_h - point.y))
+            wall_img_coords.append(Point2D(point.x + half_screen_w, half_screen_h - point.y))
         wall_img_coords = Trapeze(*wall_img_coords)
         
         coeffs = _find_coeffs(wall_img_coords, source_image_coords)
@@ -251,7 +251,7 @@ def generate_tiles(source_wall_filename, result_name, wall_dims, sides,
 if __name__ == '__main__':
     
     generate_tiles('wall.png', 'coisas', (50, 40), 3, 4, 50, 
-                    (300, 200), horizontal_fov=90, vertical_fov=60)
+                    (650, 480), horizontal_fov=90, vertical_fov=60)
     
         
     
