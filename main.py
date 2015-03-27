@@ -150,10 +150,10 @@ def screen_culled_walls(screen_walls, screen_dims):
     return new_walls
     
      
-def generate_wall_images(wall_filename, result_folder, screen_walls, screen_dims):
-
-    half_screen_w = screen_dims[0]/2
-    half_screen_h = screen_dims[1]/2
+def generate_wall_images(wall_filename, result_folder, screen_walls, screen_dims, crop=False):
+    screen_w, screen_h = screen_dims
+    half_screen_w = screen_w/2
+    half_screen_h = screen_h/2
 
     source_image = Image.open(wall_filename)
     image_w, image_h = source_image.size
@@ -179,11 +179,27 @@ def generate_wall_images(wall_filename, result_folder, screen_walls, screen_dims
                                            Image.PERSPECTIVE,
                                            coeffs,
                                            Image.BICUBIC)
+                                           
+        if crop:
+            left = min( (p.x for p in wall_img_coords) )
+            top = min( (p.y for p in wall_img_coords) )
+            right = max( (p.x for p in wall_img_coords) )
+            bottom = max( (p.y for p in wall_img_coords) )
+
+            left = max(left, 0)
+            top = max(top, 0)
+            right = min(right, screen_w)
+            bottom = min(bottom, screen_h)
+            
+            box = (left, top, right, bottom)
+            box = tuple(int(round(x)) for x in box)
+
+            new_image = new_image.crop(box)
 
         new_image.save(os.path.join(result_folder, name) + '.png', 'PNG')
        
 
-def generate_json_file(result_name, screen_dims, screen_walls):
+def generate_json_file(result_name, screen_dims, screen_walls, crop=False):
     data = _recursive_default_dict()
     data['image_size'] = [screen_dims[0], screen_dims[1]]
     
@@ -191,6 +207,7 @@ def generate_json_file(result_name, screen_dims, screen_walls):
     for name, wall in screen_walls.items():
         tile = tiles[name]
         
+        # this reflects data of the wall in the "screen space"
         corners = tile['corners']
         corners['top_left'] = list(wall.tl)
         corners['top_right'] = list(wall.tr)
@@ -207,7 +224,29 @@ def generate_json_file(result_name, screen_dims, screen_walls):
                            (sides['top'] + sides['bottom']) / 2]
                            
         tile['size'] = [ (sides['right'] - sides['left']),
-                         (sides['top'] - sides['bottom'])]
+                         (sides['top'] - sides['bottom']) ]
+                         
+        if crop:
+            # this reflects data about the cropped image (size, where it should go to, etc)
+            screen_left = -screen_dims[0]/2
+            screen_top = screen_dims[1]/2
+            screen_right = screen_dims[0]/2
+            screen_bottom = -screen_dims[1]/2
+            
+            img_data = tile['image_data']
+            img_sides = img_data['sides']
+            img_sides['left'] = max(sides['left'], screen_left)
+            img_sides['top'] = min(sides['top'], screen_top)
+            img_sides['right'] = min(sides['right'], screen_right)
+            img_sides['bottom'] = max(sides['bottom'], screen_bottom)
+            
+            img_data['center'] = [ (img_sides['left'] + img_sides['right']) / 2,
+                                   (img_sides['top'] + img_sides['bottom']) / 2 ]
+            
+            img_data['size'] = [ (img_sides['right'] - img_sides['left']),
+                                 (img_sides['top'] - img_sides['bottom']) ]
+            
+            
     
     filename = os.path.join(result_name, 'data.json')
     with open(filename, 'w') as output:
@@ -217,7 +256,7 @@ def generate_json_file(result_name, screen_dims, screen_walls):
        
        
 def generate_tiles(source_wall_filename, result_name, wall_dims, sides, 
-                    depth, depth_offset, screen_dims, horizontal_fov=90, vertical_fov=60):
+                    depth, depth_offset, screen_dims, crop=False, horizontal_fov=90, vertical_fov=60):
     """ Creates a folder with all the tiles.
     
     This functions creates a (kind of) 3D representation of the walls. With 
@@ -243,15 +282,15 @@ def generate_tiles(source_wall_filename, result_name, wall_dims, sides,
     w = world_walls(wall_dims, sides, depth, depth_offset)
     w = world_walls_in_screen(w, screen_dims, horizontal_fov, vertical_fov)
     w = screen_culled_walls(w, screen_dims)
-    generate_wall_images(source_wall_filename, result_name, w, screen_dims)
-    generate_json_file(result_name, screen_dims, w)
+    generate_wall_images(source_wall_filename, result_name, w, screen_dims, crop)
+    generate_json_file(result_name, screen_dims, w, crop)
       
        
         
 if __name__ == '__main__':
     
     generate_tiles('wall.png', 'coisas', (50, 40), 3, 4, 50, 
-                    (650, 480), horizontal_fov=90, vertical_fov=60)
+                    (650, 480), crop=True, horizontal_fov=90, vertical_fov=60)
     
         
     
