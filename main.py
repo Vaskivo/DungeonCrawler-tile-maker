@@ -13,6 +13,11 @@ Point2D = namedtuple('Point2D', 'x y')
 
 Trapeze = namedtuple('Trapeze', 'tl tr br bl')
 
+# the wall location is in "cell space" (i.e. (-1,0) means it's 
+# the cell at the left of the camera.
+# Coordinates are (y, x), where y is forward and x is to the right
+Wall = namedtuple('Wall', 'corners location side')
+
 def _recursive_default_dict():
     f = lambda: defaultdict(f)
     return defaultdict(f)
@@ -30,6 +35,12 @@ def _find_coeffs(pa, pb):
 
     res = numpy.dot(numpy.linalg.inv(A.T * A) * A.T, B)
     return numpy.array(res).reshape(8)
+    
+
+def _get_wall_name(wall):
+    locs = map(lambda x: str(x), wall.location)
+    return '{0}_{1}'.format( '_'.join(locs), wall.side)
+    
     
 
 eqs = {
@@ -97,19 +108,24 @@ def world_wall_coordinates(funcs, row, column, u, v, z_offset=0):
 def world_walls(face_dims, sides, depth, depth_offset=0):
     u, v = face_dims
     
-    walls = {}
+    walls = []
     for row in range(depth):
         for column in range(1-sides, sides):
-            front_name = '{0}_{1}_f'.format(row, column)
-            walls[front_name] = world_wall_coordinates(eqs['f'], row, column, u, v, depth_offset)
-            
+            point = (row, column)
+            walls.append( Wall(world_wall_coordinates(eqs['f'], row, column, u, v, depth_offset),
+                               point,
+                               'f'
+                              ))
             if column <= 0:     #left wall
-                name = '{0}_{1}_l'.format(row, column)
-                walls[name] = world_wall_coordinates(eqs['l'], row, column, u, v, depth_offset)   
-            
+                walls.append( Wall(world_wall_coordinates(eqs['l'], row, column, u, v, depth_offset),
+                                   point,
+                                   'l'
+                                  ))           
             if column >= 0:     # right wall
-                name = '{0}_{1}_r'.format(row, column)
-                walls[name] = world_wall_coordinates(eqs['r'], row, column, u, v, depth_offset)
+                walls.append( Wall(world_wall_coordinates(eqs['r'], row, column, u, v, depth_offset),
+                                   point,
+                                   'r'
+                                  ))
                 
     return walls
     
@@ -123,14 +139,15 @@ def world_walls_in_screen(world_walls, screen_dims, horizontal_fov, vertical_fov
     horizontal_scaling = screen_dims[0] / math.tan(horizontal_fov/2)
     vertical_scaling = screen_dims[1] / math.tan(vertical_fov/2)
     
-    screen_walls = {}
-    for name, wall in world_walls.items():
+    screen_walls = []
+    for wall in world_walls:
         new_polygon = []
-        for point_3d in wall:
+        for point_3d in wall.corners:
             point_2d = Point2D( (point_3d.x * horizontal_scaling) / point_3d.z,
                                 (point_3d.y * vertical_scaling) / point_3d.z)
             new_polygon.append(point_2d)
-        screen_walls[name] = Trapeze(*new_polygon)
+        screen_walls.append( Wall(Trapeze(*new_polygon), wall.location, wall.side))
+        
     return screen_walls
        
      
@@ -138,15 +155,17 @@ def screen_culled_walls(screen_walls, screen_dims):
     w, h = screen_dims
     left, right = -w/2, w/2
     top, bottom = h/2, -h/2
-    
-    new_walls = {}
-    for name, wall in screen_walls.items():
-        if min(wall.tl.x, wall.bl.x) > right or \
-           max(wall.tr.x, wall.br.x) < left or \
-           max(wall.tl.y, wall.tr.y) < bottom or \
-           min(wall.bl.y, wall.br.y) > top:
+        
+    new_walls = []
+    for wall in screen_walls:
+        corners = wall.corners
+        if min(corners.tl.x, corners.bl.x) > right or \
+           max(corners.tr.x, corners.br.x) < left or \
+           max(corners.tl.y, corners.tr.y) < bottom or \
+           min(corners.bl.y, corners.br.y) > top:
             continue
-        new_walls[name] = wall
+        new_walls.append(wall)
+        
     return new_walls
     
      
@@ -167,11 +186,11 @@ def generate_wall_images(wall_filename, result_folder, screen_walls, screen_dims
                                  )
     if not os.path.exists(result_folder):
         os.makedirs(result_folder)
-        
-    for name, wall in screen_walls.items():
+    
+    for wall in screen_walls:
         wall_img_coords = []
-        for point in wall:
-            wall_img_coords.append(Point2D(point.x + half_screen_w, half_screen_h - point.y))
+        for corner in wall.corners:
+            wall_img_coords.append(Point2D(corner.x + half_screen_w, half_screen_h - corner.y))
         wall_img_coords = Trapeze(*wall_img_coords)
         
         coeffs = _find_coeffs(wall_img_coords, source_image_coords)
@@ -195,30 +214,38 @@ def generate_wall_images(wall_filename, result_folder, screen_walls, screen_dims
             box = tuple(int(round(x)) for x in box)
 
             new_image = new_image.crop(box)
-
-        new_image.save(os.path.join(result_folder, name) + '.png', 'PNG')
-       
+            
+        new_image.save(os.path.join(result_folder, _get_wall_name(wall)) + '.png', 'PNG')
+    
 
 def generate_json_file(result_name, screen_dims, screen_walls, crop=False):
     data = _recursive_default_dict()
     data['image_size'] = [screen_dims[0], screen_dims[1]]
     
     tiles = data['tiles']
-    for name, wall in screen_walls.items():
-        tile = tiles[name]
+    for wall in screen_walls:
+        tile = tiles[_get_wall_name(wall)]
+        
+        wall_corners = wall.corners
+        
+        # location of the wall in "cell space"
+        tile['location'] = { 'y' : wall.location[0],
+                             'x' : wall.location[1]
+                           }
+        tile['side'] = wall.side
         
         # this reflects data of the wall in the "screen space"
         corners = tile['corners']
-        corners['top_left'] = list(wall.tl)
-        corners['top_right'] = list(wall.tr)
-        corners['bottom_right'] = list(wall.br)
-        corners['bottom_left'] = list(wall.bl)
+        corners['top_left'] = list(wall_corners.tl)
+        corners['top_right'] = list(wall_corners.tr)
+        corners['bottom_right'] = list(wall_corners.br)
+        corners['bottom_left'] = list(wall_corners.bl)
         
         sides = tile['sides']
-        sides['left'] = min([point.x for point in wall])
-        sides['right'] = max([point.x for point in wall])
-        sides['top'] = max([point.y for point in wall])
-        sides['bottom'] = min([point.y for point in wall])
+        sides['left'] = min([point.x for point in wall_corners])
+        sides['right'] = max([point.x for point in wall_corners])
+        sides['top'] = max([point.y for point in wall_corners])
+        sides['bottom'] = min([point.y for point in wall_corners])
         
         tile['center'] = [ (sides['left'] + sides['right']) / 2,
                            (sides['top'] + sides['bottom']) / 2]
@@ -290,7 +317,7 @@ def generate_tiles(source_wall_filename, result_name, wall_dims, sides,
 if __name__ == '__main__':
     
     generate_tiles('wall.png', 'coisas', (50, 40), 3, 4, 50, 
-                    (650, 480), crop=True, horizontal_fov=90, vertical_fov=60)
+                    (650, 480), crop=False, horizontal_fov=90, vertical_fov=60)
     
         
     
