@@ -175,6 +175,9 @@ def generate_wall_images(wall_filename, result_folder, screen_walls, screen_dims
     half_screen_h = screen_h/2
 
     source_image = Image.open(wall_filename)
+    # save original image
+    source_image.save(os.path.join(result_folder, 'original.png'), 'PNG')
+    
     image_w, image_h = source_image.size
     half_image_w = image_w/2
     half_image_h = image_h/2
@@ -316,7 +319,7 @@ def generate_tiles(source_wall_filename, result_name, wall_dims, sides,
         
 if __name__ == '__main__':
     
-    generate_tiles('wall.png', 'coisas', (50, 40), 3, 4, 50, 
+    generate_tiles('wall.png', 'coisas', (50, 40), 3, 4, 50,
                     (650, 480), crop=False, horizontal_fov=90, vertical_fov=60)
     
         
