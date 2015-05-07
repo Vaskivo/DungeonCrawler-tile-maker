@@ -1,12 +1,14 @@
 
 
 from __future__ import division
-from collections import namedtuple, defaultdict
+from collections import namedtuple, defaultdict, deque
 from PIL import Image, ImageDraw
 import numpy
 import math
 import json
 import os
+
+import pdb
 
 Point3D = namedtuple('Point3D', 'x y z')
 Point2D = namedtuple('Point2D', 'x y')
@@ -132,6 +134,12 @@ def world_walls(face_dims, sides, depth, depth_offset=0):
 
 def world_walls_in_screen(world_walls, screen_dims, horizontal_fov, vertical_fov):
     # calculations from http://www.extentofthejam.com/pseudo/
+    
+    def my_round(num):
+        if num > 0:
+            return math.ceil(num)
+        else:
+            return math.floor(num)
 
     horizontal_fov = math.radians(horizontal_fov)
     vertical_fov = math.radians(vertical_fov)
@@ -143,8 +151,8 @@ def world_walls_in_screen(world_walls, screen_dims, horizontal_fov, vertical_fov
     for wall in world_walls:
         new_polygon = []
         for point_3d in wall.corners:
-            point_2d = Point2D( (point_3d.x * horizontal_scaling) / point_3d.z,
-                                (point_3d.y * vertical_scaling) / point_3d.z)
+            point_2d = Point2D( my_round((point_3d.x * horizontal_scaling) / point_3d.z),
+                                my_round((point_3d.y * vertical_scaling) / point_3d.z))
             new_polygon.append(point_2d)
         screen_walls.append( Wall(Trapeze(*new_polygon), wall.location, wall.side))
         
@@ -168,16 +176,14 @@ def screen_culled_walls(screen_walls, screen_dims):
         
     return new_walls
     
-     
-def generate_wall_images(wall_filename, result_folder, screen_walls, screen_dims, crop=False):
+  
+def _generate_images(wall_filename, screen_walls, screen_dims, crop=False):
     screen_w, screen_h = screen_dims
     half_screen_w = screen_w/2
     half_screen_h = screen_h/2
-
-    source_image = Image.open(wall_filename)
-    # save original image
-    source_image.save(os.path.join(result_folder, 'original.png'), 'PNG')
     
+    source_image = Image.open(wall_filename)
+
     image_w, image_h = source_image.size
     half_image_w = image_w/2
     half_image_h = image_h/2
@@ -187,9 +193,7 @@ def generate_wall_images(wall_filename, result_folder, screen_walls, screen_dims
                                   Point2D(image_w, image_h),
                                   Point2D(0, image_h)
                                  )
-    if not os.path.exists(result_folder):
-        os.makedirs(result_folder)
-    
+    tiles = []
     for wall in screen_walls:
         wall_img_coords = []
         for corner in wall.corners:
@@ -218,7 +222,126 @@ def generate_wall_images(wall_filename, result_folder, screen_walls, screen_dims
 
             new_image = new_image.crop(box)
             
-        new_image.save(os.path.join(result_folder, _get_wall_name(wall)) + '.png', 'PNG')
+            
+        tiles.append( (wall, new_image) )
+    return tiles
+  
+  
+def generate_wall_tiles(wall_filename, result_folder, screen_walls, screen_dims, crop=False):
+    tiles = _generate_images(wall_filename, screen_walls, screen_dims, crop)
+    
+    if not os.path.exists(result_folder):
+        os.makedirs(result_folder)
+            
+    for wall, image in tiles:    
+        image.save(os.path.join(result_folder, _get_wall_name(wall)) + '.png', 'PNG')
+  
+
+  
+def _packed_rectangles(rectangles, border):
+    if not rectangles:
+        return None
+    
+    rectangles = sorted(rectangles, key=lambda x: x.width, reverse=True)
+    max_width = rectangles[0].width
+    
+    rectangles = sorted(rectangles, key=lambda x: x.height, reverse=True)
+    max_height = rectangles[0].height
+    
+    width_exponent = 2
+    height_exponent = 2
+    
+    width_limit = 2 ** width_exponent
+    height_limit = 2 ** height_exponent
+    
+    while width_limit < max_width:
+        width_exponent += 1
+        width_limit = 2 ** width_exponent
+    while height_limit < max_height:
+        height_exponent += 1
+        height_limit = 2 ** height_exponent
+        
+    result = []   
+    while True:
+        openings = { border : border }  # y : x
+        for r in rectangles:
+            # 'try to insert rectangle'
+            
+            if len(result) == 999:
+                return result, (width_limit, height_limit)
+            
+            ys = sorted(openings.keys())
+            i = 0
+            while i < len(ys):
+                op_y = ys[i]
+                
+                if i+1 < len(ys):
+                    op_x = openings[ys[i+1]]
+                else:
+                    op_x = border
+                new_x = op_x + r.width + border
+                new_y = op_y + r.height + border
+                    
+                if new_x <= width_limit and new_y <= height_limit:
+                    # can insert!!
+                    result.append((r, Point2D(op_x, op_y)))
+                    # removing openings 'between' the tile's y
+                    middle = [a for a in openings.keys() if op_y < a < new_y]
+                    for val in middle:
+                        openings.pop(val, None)
+
+                    openings[new_y] = new_x
+                    if not (openings.get(op_y, None) and openings[op_y] > new_x):
+                        openings[op_y] = new_x
+                    break   # GOTO 'try to insert rectangle' 
+                i += 1
+            else:
+                # can't fit the rectangle anywhere.
+                break   # GOTO 'resize and restart'
+        else:
+            # packed every rectangle
+            break   # GOTO 'end'
+        # 'resize and restart'
+        if height_exponent > width_exponent:
+            width_exponent += 1
+            width_limit = 2 ** width_exponent
+        else:
+            height_exponent += 1
+            height_limit = 2 ** height_exponent
+        result = []        
+    # 'end'
+    return result, (width_limit, height_limit)
+    
+  
+def generate_tilesheet(wall_filename, result_name, screen_walls, screen_dims, border=5):
+    AuxWall = namedtuple('AuxWall', 'original_wall width height')
+    
+    tiles = _generate_images(wall_filename, screen_walls, screen_dims, True)
+    tiles = dict(tiles)
+    
+    aux_walls = []
+    for wall, tile in tiles.items():
+        aux_wall = AuxWall(wall, tile.size[0], tile.size[1])
+        aux_walls.append(aux_wall)
+        
+    packed_walls, image_size = _packed_rectangles(aux_walls, border)
+    
+    if not os.path.exists(result_name):
+        os.makedirs(result_name)
+    
+    final_img = Image.new('RGBA', image_size)    
+    
+    for aux_wall, point in packed_walls:
+        tile = tiles[aux_wall.original_wall]
+        #dr = ImageDraw.Draw(final_img)
+        #dr.rectangle([point.x-3, point.y-3, point.x + tile.size[0]+3, point.y + tile.size[1]+3], fill='red')
+        final_img.paste(tile, tuple(point))
+        
+    final_img.save(os.path.join(result_name, result_name) + '.png', 'PNG')
+    
+    
+    
+    
     
 
 def generate_json_file(result_name, screen_dims, screen_walls, crop=False):
@@ -277,6 +400,8 @@ def generate_json_file(result_name, screen_dims, screen_walls, crop=False):
                                  (img_sides['top'] - img_sides['bottom']) ]
             
             
+    if not os.path.exists(result_name):
+        os.makedirs(result_name)
     
     filename = os.path.join(result_name, 'data.json')
     with open(filename, 'w') as output:
@@ -286,7 +411,8 @@ def generate_json_file(result_name, screen_dims, screen_walls, crop=False):
        
        
 def generate_tiles(source_wall_filename, result_name, wall_dims, sides, 
-                    depth, depth_offset, screen_dims, crop=False, horizontal_fov=90, vertical_fov=60):
+                    depth, depth_offset, screen_dims, horizontal_fov=90, vertical_fov=60,
+                     crop=False, tilesheet_borders = 5):
     """ Creates a folder with all the tiles.
     
     This functions creates a (kind of) 3D representation of the walls. With 
@@ -308,19 +434,26 @@ def generate_tiles(source_wall_filename, result_name, wall_dims, sides,
         horizontal_fov: horizontal field of view angle, in degrees
         vertical_fov: vertical field of view angle, in degrees
     """            
-                    
+      
     w = world_walls(wall_dims, sides, depth, depth_offset)
     w = world_walls_in_screen(w, screen_dims, horizontal_fov, vertical_fov)
     w = screen_culled_walls(w, screen_dims)
-    generate_wall_images(source_wall_filename, result_name, w, screen_dims, crop)
+    generate_wall_tiles(source_wall_filename, result_name, w, screen_dims, crop)
+    generate_tilesheet(source_wall_filename, result_name, w, screen_dims, tilesheet_borders)
     generate_json_file(result_name, screen_dims, w, crop)
       
        
         
 if __name__ == '__main__':
     
-    generate_tiles('wall.png', 'coisas', (50, 40), 3, 4, 50,
-                    (650, 480), crop=False, horizontal_fov=90, vertical_fov=60)
+    #generate_tiles('wall.png', 'test', (50, 40), 3, 4, 50,
+    #                (650, 480), horizontal_fov=90, vertical_fov=60,
+    #                crop=True, tilesheet_borders=30)
+    
+    # my personal tests. Not gonna remove it
+    generate_tiles('wall_new.png', 'coisas', (800, 400), 7, 9, 800,
+                    (1440, 1080), horizontal_fov=90, vertical_fov=60,
+                    crop=True, tilesheet_borders=30)
     
         
     
