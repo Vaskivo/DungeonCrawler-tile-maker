@@ -331,17 +331,100 @@ def generate_tilesheet(wall_filename, result_name, screen_walls, screen_dims, bo
     
     final_img = Image.new('RGBA', image_size)    
     
+    json_data = { 'name' : 'tilesheet_data',
+                  'extra_data' : { 'size' : image_size }
+                }
     for aux_wall, point in packed_walls:
         tile = tiles[aux_wall.original_wall]
-        #dr = ImageDraw.Draw(final_img)
-        #dr.rectangle([point.x-3, point.y-3, point.x + tile.size[0]+3, point.y + tile.size[1]+3], fill='red')
         final_img.paste(tile, tuple(point))
+        wall_name = _get_wall_name(aux_wall.original_wall)
+        data = { 
+                'size' : (aux_wall.width, aux_wall.height),
+                'corners' : {
+                             'top_left' : tuple(point),
+                             'top_right' : (point.x + aux_wall.width, point.y),
+                             'bottom_left' : (point.x, point.y + aux_wall.height),
+                             'bottom_right' : (point.x + aux_wall.width, point.y + aux_wall.height)
+                            },
+                'sides' : { 
+                           'left' : point.x,
+                           'right' : point.x + aux_wall.width,
+                           'top' : point.y,
+                           'bottom' : point.y + aux_wall.height
+                          }
+               }
+        json_data[wall_name] = data
+                                 
         
-    final_img.save(os.path.join(result_name, result_name) + '.png', 'PNG')
+    final_img.save(os.path.join(result_name, 'tilesheet.png'), 'PNG')
     
+    return json_data
     
+
+def generate_json_file2(result_name, screen_dims, screen_walls, additional_data=None):
+    if not additional_data:
+        additional_data = {}
     
+    data = _recursive_default_dict()
+    data['image_size'] = [screen_dims[0], screen_dims[1]]
     
+    tiles = data['tiles']
+    for wall in screen_walls:
+        wall_name = _get_wall_name(wall)
+        tile = tiles[wall_name]
+        
+        wall_corners = wall.corners
+    
+        # location of the wall in "cell space"
+        tile['location'] = { 'y' : wall.location[0],
+                             'x' : wall.location[1]
+                           }
+                           
+        tile['side'] = wall.side
+        
+        # this reflects data of the wall in the "screen space"
+        corners = tile['corners']
+        corners['top_left'] = list(wall_corners.tl)
+        corners['top_right'] = list(wall_corners.tr)
+        corners['bottom_right'] = list(wall_corners.br)
+        corners['bottom_left'] = list(wall_corners.bl)
+        
+        sides = tile['sides']
+        sides['left'] = min([point.x for point in wall_corners])
+        sides['right'] = max([point.x for point in wall_corners])
+        sides['top'] = max([point.y for point in wall_corners])
+        sides['bottom'] = min([point.y for point in wall_corners])
+        
+        # extra calculation for the case where a wall's limits are 
+        # outside of the screen
+        screen_left = -screen_dims[0]/2
+        screen_top = screen_dims[1]/2
+        screen_right = screen_dims[0]/2
+        screen_bottom = -screen_dims[1]/2
+        
+        sides['left'] = max(sides['left'], screen_left)
+        sides['top'] = min(sides['top'], screen_top)
+        sides['right'] = min(sides['right'], screen_right)
+        sides['bottom'] = max(sides['bottom'], screen_bottom)
+        
+        tile['center'] = [ (sides['left'] + sides['right']) / 2,
+                           (sides['top'] + sides['bottom']) / 2]
+                           
+        tile['size'] = [ (sides['right'] - sides['left']),
+                         (sides['top'] - sides['bottom']) ]                           
+                           
+        for add_data in additional_data:
+            tile[add_data['name']] = add_data[wall_name]
+            
+    for add_data in additional_data:       
+        data[add_data['name']] = add_data['extra_data']
+    
+    if not os.path.exists(result_name):
+        os.makedirs(result_name)
+    
+    filename = os.path.join(result_name, 'data.json')
+    with open(filename, 'w') as output:
+        json.dump(data, output, sort_keys=True, indent=4)
     
 
 def generate_json_file(result_name, screen_dims, screen_walls, crop=False):
@@ -438,9 +521,10 @@ def generate_tiles(source_wall_filename, result_name, wall_dims, sides,
     w = world_walls(wall_dims, sides, depth, depth_offset)
     w = world_walls_in_screen(w, screen_dims, horizontal_fov, vertical_fov)
     w = screen_culled_walls(w, screen_dims)
-    generate_wall_tiles(source_wall_filename, result_name, w, screen_dims, crop)
-    generate_tilesheet(source_wall_filename, result_name, w, screen_dims, tilesheet_borders)
-    generate_json_file(result_name, screen_dims, w, crop)
+    #generate_wall_tiles(source_wall_filename, result_name, w, screen_dims, crop)
+    tilesheet_data = generate_tilesheet(source_wall_filename, result_name, w, screen_dims, tilesheet_borders)
+    #generate_json_file(result_name, screen_dims, w, crop)
+    generate_json_file2(result_name, screen_dims, w, (tilesheet_data,))
       
        
         
@@ -451,7 +535,7 @@ if __name__ == '__main__':
     #                crop=True, tilesheet_borders=30)
     
     # my personal tests. Not gonna remove it
-    generate_tiles('wall_new.png', 'coisas', (800, 400), 7, 9, 800,
+    generate_tiles('wall_new.png', 'coisas', (800, 400), 3, 4, 800,
                     (1440, 1080), horizontal_fov=90, vertical_fov=60,
                     crop=True, tilesheet_borders=30)
     
