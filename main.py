@@ -141,8 +141,8 @@ def world_walls_in_screen(world_walls, screen_dims, horizontal_fov, vertical_fov
     horizontal_fov = math.radians(horizontal_fov)
     vertical_fov = math.radians(vertical_fov)
 
-    horizontal_scaling = screen_dims[0] / math.tan(horizontal_fov/2)
-    vertical_scaling = screen_dims[1] / math.tan(vertical_fov/2)
+    horizontal_scaling = (screen_dims[0]/2) / math.tan(horizontal_fov/2)
+    vertical_scaling = (screen_dims[1]/2) / math.tan(vertical_fov/2)
 
     screen_walls = []
     for wall in world_walls:
@@ -152,7 +152,6 @@ def world_walls_in_screen(world_walls, screen_dims, horizontal_fov, vertical_fov
                                my_round((point_3d.y * vertical_scaling) / point_3d.z))
             new_polygon.append(point_2d)
         screen_walls.append(Wall(Trapeze(*new_polygon), wall.location, wall.side))
-
     return screen_walls
 
 
@@ -457,11 +456,11 @@ def generate_tiles(source_wall_filename, result_name, wall_dims, sides,
 
 
 if __name__ == '__main__':
-    generate_tiles('wall.png', 'test', (50, 40), 3, 4, 50,
-                   (650, 480), horizontal_fov=90, vertical_fov=60,
-                   crop=False, tilesheet_borders=30)
+    #generate_tiles('wall.png', 'test', (50, 40), 3, 4, 50,
+    #               (650, 480), horizontal_fov=90, vertical_fov=60,
+    #               crop=False, tilesheet_borders=30)
 
     # my personal tests. Not gonna remove it
-    # generate_tiles('wall_new.png', 'coisas', (800, 400), 3, 4, 800,
-    #                (1440, 1080), horizontal_fov=90, vertical_fov=60,
-    #                crop=True, tilesheet_borders=30)
+    generate_tiles('wall_new.png', 'coisas', (800, 400), 7, 10, 500,
+                    (1440, 1080), horizontal_fov=60, vertical_fov=45,
+                    crop=True, tilesheet_borders=30)
